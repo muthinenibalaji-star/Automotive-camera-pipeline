@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+
+# Data files - don't commit large files
+data/input/*
+!data/input/.gitkeep
+data/output/*
+!data/output/.gitkeep
+data/datasets/*
+!data/datasets/.gitkeep
+
+# Model weights - too large for Git
+models/*.pth
+models/*.pt
+models/*.onnx
+!models/.gitkeep
+
+# Logs
+logs/*.log
+!logs/.gitkeep
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.venv/
+venv/
+
+# Docker
+.npm-global/
