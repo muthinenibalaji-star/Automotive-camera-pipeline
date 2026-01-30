@@ -1,0 +1,136 @@
+version: '3.8'
+
+services:
+  automotive-pipeline:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: automotive-camera-pipeline:latest
+    container_name: automotive-perception
+    
+    # GPU support
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    
+    # Volume mounts for data persistence and code development
+    volumes:
+      # Source code (for development - edit and reload)
+      - ./src:/app/src
+      - ./configs:/app/configs
+      
+      # Data directories
+      - ./data/input:/app/data/input
+      - ./data/output:/app/data/output
+      - ./data/datasets:/app/data/datasets
+      
+      # Model checkpoints
+      - ./models:/app/models
+      
+      # Logs
+      - ./logs:/app/logs
+      
+      # USB camera access (if needed)
+      - /dev/video0:/dev/video0
+      - /dev/video1:/dev/video1
+      - /dev/video2:/dev/video2
+      - /dev/video3:/dev/video3
+    
+    # Device access for cameras
+    devices:
+      - /dev/video0:/dev/video0
+      - /dev/video1:/dev/video1
+      - /dev/video2:/dev/video2
+      - /dev/video3:/dev/video3
+    
+    # Network mode for OBBRec camera access
+    network_mode: "host"
+    
+    # Privileged mode for hardware access (can be restricted in production)
+    privileged: true
+    
+    # Environment variables
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility,video
+      - DISPLAY=${DISPLAY:-:0}
+      - QT_X11_NO_MITSHM=1
+      - CONFIG_PATH=/app/configs/pipeline_config.yaml
+      - LOG_LEVEL=INFO
+      - CUDA_VISIBLE_DEVICES=0
+    
+    # Restart policy
+    restart: unless-stopped
+    
+    # Run command (can be overridden)
+    command: python3 -m src.main --config /app/configs/pipeline_config.yaml
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import torch; print(torch.cuda.is_available())"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Optional: Jupyter notebook for development and debugging
+  jupyter-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: automotive-camera-pipeline:latest
+    container_name: automotive-jupyter
+    
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    
+    volumes:
+      - ./:/app
+      - ./notebooks:/app/notebooks
+    
+    ports:
+      - "8888:8888"
+    
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - JUPYTER_ENABLE_LAB=yes
+    
+    command: >
+      bash -c "pip install jupyter jupyterlab &&
+               jupyter lab --ip=0.0.0.0 --port=8888 --no-browser --allow-root
+               --NotebookApp.token='' --NotebookApp.password=''"
+    
+    profiles:
+      - dev
+
+  # Optional: TensorBoard for monitoring
+  tensorboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: automotive-camera-pipeline:latest
+    container_name: automotive-tensorboard
+    
+    volumes:
+      - ./logs:/app/logs
+    
+    ports:
+      - "6006:6006"
+    
+    command: tensorboard --logdir=/app/logs --host=0.0.0.0 --port=6006
+    
+    profiles:
+      - monitoring
+
+networks:
+  default:
+    name: automotive-network
