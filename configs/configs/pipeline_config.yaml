@@ -1,0 +1,87 @@
+yaml
+# Automotive Camera Pipeline Configuration
+
+# System Settings
+system:
+  num_cameras: 1
+  target_fps: 30
+  max_latency_ms: 100
+  gpu_device: 0
+  log_level: INFO
+
+# Camera Settings
+cameras:
+  camera_0:
+    source_type: "usb"  # Options: usb, dataset, industrial
+    source: 0           # Device index or path
+    width: 1920
+    height: 1080
+    fps: 30
+    
+  # Example: Additional cameras
+  # camera_1:
+  #   source_type: "dataset"
+  #   source: "/app/data/input/test_video.mp4"
+  #   width: 1920
+  #   height: 1080
+  #   fps: 30
+
+# Detection Model
+detection:
+  model_type: "rtmdet"
+  config_path: "configs/rtmdet_config.py"
+  checkpoint_path: "models/rtmdet_weights.pth"
+  confidence_threshold: 0.5
+  nms_threshold: 0.45
+  device: "cuda"
+  fp16: true
+  
+  # Light classes - customize based on your model
+  classes:
+    - "left_indicator"
+    - "right_indicator"
+    - "brake_light"
+    - "reverse_light"
+    - "headlight"
+    - "fog_light"
+    - "tail_light"
+    - "hazard_light"
+
+# Tracking Configuration
+tracking:
+  method: "bytetrack"
+  track_thresh: 0.5
+  track_buffer: 30        # Frames to keep lost tracks
+  match_thresh: 0.8       # IoU threshold for matching
+  min_box_area: 100       # Minimum bbox area
+
+# State Estimation
+state_estimation:
+  # Intensity thresholds (0-255)
+  on_threshold: 120       # Brightness above this = ON
+  off_threshold: 50       # Brightness below this = OFF
+  
+  # Blinking detection
+  blink_frequency_hz: [1.0, 2.0]  # Min, Max expected frequency
+  blink_window_frames: 60         # Analysis window size
+  min_blink_cycles: 2             # Minimum cycles to confirm blinking
+  
+  # Temporal filtering
+  temporal_window: 5              # Frames for smoothing
+  state_change_threshold: 3       # Min frames to change state
+
+# Output Configuration
+output:
+  format: "json"
+  include_timestamps: true
+  output_directory: "data/output"
+  log_frames: false               # Log every frame (verbose)
+  save_visualizations: true       # Save annotated images
+  visualization_directory: "data/output/visualizations"
+
+# Performance Tuning
+performance:
+  batch_size: 1
+  num_workers: 2
+  prefetch_frames: 3
+  enable_profiling: false
