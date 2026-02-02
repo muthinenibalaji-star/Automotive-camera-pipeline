@@ -1,72 +1,137 @@
 """
-Integrated Pipeline with State Estimation
+Complete Integrated Pipeline Example
 
-This example shows how to integrate the state estimation module
-into the existing perception pipeline with minimal code changes.
+Demonstrates the full pipeline with:
+1. RTMDet Detection
+2. ByteTrack Tracking
+3. FSM State Estimation
+4. Real-time Visualization
+
+This shows how all components work together.
 """
 
 import cv2
 import yaml
 import time
-import json
+import logging
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List
 
-# Import perception modules
+# Detection
+from pipeline.detection import DetectorFactory, DetectorOutput
+
+# State Estimation
 from pipeline.state_estimation import (
     StateManager,
     DetectionInput,
-    StateEstimatorConfig,
-    LightState
+    StateEstimatorConfig
 )
+
+# Visualization
 from pipeline.visualization import PerceptionVisualizer
-from pipeline.state_estimation import StateDebugger
 
 
-class IntegratedPerceptionPipeline:
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+
+class AutomotivePerceptionPipeline:
     """
-    Complete perception pipeline with state estimation.
+    Complete automotive perception pipeline.
     
     Pipeline Flow:
-    1. Camera Capture
-    2. Detection (RTMDet)
-    3. Tracking (ByteTrack)
-    4. State Estimation (FSM) ← NEW
-    5. Visualization ← ENHANCED
-    6. Output Serialization ← ENHANCED
+        Camera → Detection → Tracking → State Estimation → Visualization
     """
     
     def __init__(self, config_path: str):
+        """
+        Initialize pipeline with configuration.
+        
+        Args:
+            config_path: Path to pipeline_config.yaml
+        """
         # Load configuration
         with open(config_path, 'r') as f:
             self.config = yaml.safe_load(f)
         
-        # Initialize FPS
+        # Get system settings
         self.fps = self.config['cameras']['camera_0']['fps']
+        self.max_latency_ms = self.config['system']['max_latency_ms']
         
-        # Initialize state estimation
-        self._init_state_estimation()
+        # Initialize components
+        self.detector = None
+        self.state_manager = None
+        self.visualizer = None
         
-        # Initialize visualization
-        self._init_visualization()
-        
-        # Initialize debug tools
-        self._init_debug_tools()
-        
-        # Placeholder for other components
-        # self.camera_manager = CameraManager(...)
-        # self.detector = LightDetector(...)
-        # self.tracker = MultiObjectTracker(...)
-        
-        print("✓ Integrated pipeline initialized with state estimation")
+        # Performance tracking
+        self.frame_count = 0
+        self.start_time = None
     
-    def _init_state_estimation(self):
+    def initialize(self) -> bool:
+        """
+        Initialize all pipeline components.
+        
+        Returns:
+            True if initialization successful
+        """
+        try:
+            logger.info("=" * 60)
+            logger.info("Automotive Perception Pipeline v2.0")
+            logger.info("=" * 60)
+            
+            # 1. Initialize Detector
+            logger.info("\n[1/3] Initializing Detector...")
+            self.detector = self._init_detector()
+            
+            # 2. Initialize State Manager
+            logger.info("\n[2/3] Initializing State Estimation...")
+            self.state_manager = self._init_state_manager()
+            
+            # 3. Initialize Visualizer
+            logger.info("\n[3/3] Initializing Visualization...")
+            self.visualizer = self._init_visualizer()
+            
+            logger.info("\n✓ Pipeline initialized successfully")
+            logger.info("=" * 60)
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Pipeline initialization failed: {e}")
+            return False
+    
+    def _init_detector(self):
+        """Initialize detection module"""
+        detection_config = self.config.get('detection', {})
+        
+        # Create detector using factory
+        backend = detection_config.get('backend', 'rtmdet')
+        detector = DetectorFactory.create(backend, detection_config)
+        
+        # Initialize detector (loads model)
+        if not detector.initialize():
+            raise RuntimeError("Detector initialization failed")
+        
+        # Log detector info
+        stats = detector.get_statistics()
+        logger.info(f"✓ Detector: RTMDet-{stats['variant'].upper()}")
+        logger.info(f"  Device: {stats['device']}")
+        logger.info(f"  FP16: {stats['fp16']}")
+        logger.info(f"  Classes: {len(detector.get_class_names())}")
+        
+        return detector
+    
+    def _init_state_manager(self):
         """Initialize state estimation module"""
         if not self.config['state_estimation']['enabled']:
-            self.state_manager = None
-            return
+            logger.info("State estimation disabled in config")
+            return None
         
-        # Create configuration
+        # Create state estimation config
         state_config = StateEstimatorConfig(
             window_size=self.config['state_estimation']['window_size'],
             on_threshold=self.config['state_estimation']['on_threshold'],
@@ -82,18 +147,23 @@ class IntegratedPerceptionPipeline:
             state_change_debounce_frames=self.config['state_estimation']['transition']['debounce_frames']
         )
         
-        # Create state manager
-        self.state_manager = StateManager(state_config, self.fps)
-        print("✓ State estimation enabled")
+        state_manager = StateManager(state_config, self.fps)
+        
+        logger.info("✓ State estimation enabled")
+        logger.info(f"  Window size: {state_config.window_size} frames")
+        logger.info(f"  Blink range: {state_config.min_blink_frequency}-{state_config.max_blink_frequency} Hz")
+        
+        return state_manager
     
-    def _init_visualization(self):
+    def _init_visualizer(self):
         """Initialize visualization module"""
         if not self.config['visualization']['enabled']:
-            self.visualizer = None
-            return
+            logger.info("Visualization disabled in config")
+            return None
         
         vis_config = self.config['visualization']
-        self.visualizer = PerceptionVisualizer(
+        
+        visualizer = PerceptionVisualizer(
             show_labels=vis_config['display']['show_labels'],
             show_confidence=vis_config['display']['show_confidence'],
             show_frequency=vis_config['display']['show_frequency'],
@@ -101,161 +171,148 @@ class IntegratedPerceptionPipeline:
             font_scale=vis_config['rendering']['font_scale'],
             font_thickness=vis_config['rendering']['font_thickness']
         )
-        print("✓ Visualization enabled")
-    
-    def _init_debug_tools(self):
-        """Initialize debug tools"""
-        if not self.config['debug']['enabled']:
-            self.debugger = None
-            return
         
-        debug_config = self.config['debug']
-        if debug_config['state_plots']['enabled']:
-            output_dir = debug_config['state_plots']['output_dir']
-            self.debugger = StateDebugger(output_dir)
-            self.debug_save_interval = debug_config['state_plots']['save_interval']
-            print(f"✓ Debug plots enabled (saving to {output_dir})")
-        else:
-            self.debugger = None
+        logger.info("✓ Visualization enabled")
+        
+        return visualizer
     
     def process_frame(self, frame, frame_id: int, timestamp: float) -> dict:
         """
         Process single frame through complete pipeline.
         
         Args:
-            frame: Input image (numpy array)
+            frame: Input frame (BGR)
             frame_id: Frame number
             timestamp: Frame timestamp
             
         Returns:
             Complete perception results
         """
-        # Stage 1: Detection (placeholder - replace with actual detector)
-        detections = self._mock_detections(frame_id, timestamp)
+        pipeline_start = time.time()
         
-        # Stage 2: Tracking (placeholder - replace with actual tracker)
-        tracked_objects = self._mock_tracking(detections)
+        # Stage 1: Detection
+        detection_start = time.time()
+        detector_output = self.detector.infer(frame, timestamp)
+        detection_time = (time.time() - detection_start) * 1000
         
-        # Stage 3: State Estimation (NEW)
+        # Stage 2: Tracking (mock - replace with actual tracker)
+        tracking_start = time.time()
+        tracked_objects = self._mock_tracking(detector_output)
+        tracking_time = (time.time() - tracking_start) * 1000
+        
+        # Stage 3: State Estimation
+        state_start = time.time()
         state_results = {}
         if self.state_manager is not None:
-            for obj in tracked_objects:
-                detection_input = DetectionInput(
-                    track_id=obj['track_id'],
-                    light_type=obj['class'],
-                    is_active=obj['is_active'],
-                    confidence=obj['confidence'],
-                    timestamp=timestamp
-                )
-                
-                # Update state estimation
-                state_estimate = self.state_manager.update(detection_input)
-                
-                # Store result
-                key = (obj['track_id'], obj['class'])
-                state_results[key] = state_estimate
-                
-                # Update object with state info
-                obj['state'] = state_estimate.state.value
-                obj['state_confidence'] = state_estimate.confidence
-                obj['blink_frequency'] = state_estimate.blink_frequency
-                obj['activation_ratio'] = state_estimate.activation_ratio
+            state_results = self._estimate_states(tracked_objects, timestamp)
+        state_time = (time.time() - state_start) * 1000
         
-        # Stage 4: Visualization (ENHANCED)
+        # Stage 4: Visualization
         if self.visualizer is not None:
-            frame = self._visualize_results(frame, tracked_objects, state_results, frame_id)
+            frame = self._visualize(frame, tracked_objects, state_results, frame_id)
         
-        # Stage 5: Debug Plots (if enabled)
-        if self.debugger is not None and frame_id % self.debug_save_interval == 0:
-            self._generate_debug_plots(frame_id)
+        # Calculate total latency
+        total_latency = (time.time() - pipeline_start) * 1000
         
-        # Stage 6: Cleanup stale tracks
-        if self.state_manager is not None:
-            self.state_manager.cleanup_stale_tracks(timestamp)
+        # Check latency budget
+        if total_latency > self.max_latency_ms:
+            logger.warning(f"Latency exceeded: {total_latency:.1f}ms > {self.max_latency_ms}ms")
         
-        # Prepare output
+        # Prepare results
         results = {
             'frame_id': frame_id,
             'timestamp': timestamp,
-            'detections': tracked_objects,
-            'num_tracks': len(set(obj['track_id'] for obj in tracked_objects))
+            'num_detections': len(detector_output.detections),
+            'num_tracked': len(tracked_objects),
+            'latency': {
+                'detection_ms': detection_time,
+                'tracking_ms': tracking_time,
+                'state_estimation_ms': state_time,
+                'total_ms': total_latency
+            },
+            'detections': [det.to_dict() for det in detector_output.detections],
+            'tracked_objects': tracked_objects
         }
         
-        if self.state_manager is not None:
-            results['state_statistics'] = self.state_manager.get_statistics()
-        
-        return results
+        return results, frame
     
-    def _mock_detections(self, frame_id: int, timestamp: float) -> List[dict]:
-        """Mock detection results - replace with actual detector"""
-        # Simulate detected lights with varying activation
-        import random
+    def _mock_tracking(self, detector_output: DetectorOutput) -> List[dict]:
+        """
+        Mock tracking - replace with actual ByteTrack.
         
-        detections = []
-        
-        # Left indicator (blinking)
-        is_blink_on = (frame_id % 30) < 15  # 1 Hz blink at 30 FPS
-        detections.append({
-            'bbox': [100, 200, 50, 30],
-            'class': 'left_indicator',
-            'confidence': 0.9,
-            'is_active': is_blink_on
-        })
-        
-        # Brake light (ON)
-        detections.append({
-            'bbox': [300, 200, 60, 35],
-            'class': 'brake_light',
-            'confidence': 0.95,
-            'is_active': True
-        })
-        
-        # Headlight (OFF)
-        detections.append({
-            'bbox': [500, 180, 70, 40],
-            'class': 'headlight',
-            'confidence': 0.85,
-            'is_active': False
-        })
-        
-        return detections
-    
-    def _mock_tracking(self, detections: List[dict]) -> List[dict]:
-        """Mock tracking - replace with actual tracker"""
-        # Add stable track IDs
+        For now, assigns simple stable IDs.
+        """
         tracked = []
-        for i, det in enumerate(detections):
-            det['track_id'] = i + 1  # Stable IDs for demo
-            tracked.append(det)
+        
+        for i, detection in enumerate(detector_output.detections):
+            # Simple mock: use position hash as track_id
+            x1, y1, x2, y2 = detection.bbox
+            track_id = hash((int((x1+x2)/2/100), int((y1+y2)/2/100))) % 1000
+            
+            tracked.append({
+                'track_id': track_id,
+                'bbox': detection.bbox,
+                'class_id': detection.class_id,
+                'class_name': detection.class_name,
+                'confidence': detection.confidence,
+                'is_active': detection.confidence > 0.6  # Simple activation
+            })
+        
         return tracked
     
-    def _visualize_results(
-        self,
-        frame,
-        tracked_objects: List[dict],
-        state_results: Dict,
-        frame_id: int
-    ):
+    def _estimate_states(self, tracked_objects: List[dict], timestamp: float) -> Dict:
+        """Run state estimation on tracked objects"""
+        state_results = {}
+        
+        for obj in tracked_objects:
+            # Create detection input
+            det_input = DetectionInput(
+                track_id=obj['track_id'],
+                light_type=obj['class_name'],
+                is_active=obj['is_active'],
+                confidence=obj['confidence'],
+                timestamp=timestamp
+            )
+            
+            # Update state
+            estimate = self.state_manager.update(det_input)
+            
+            # Store result
+            key = (obj['track_id'], obj['class_name'])
+            state_results[key] = estimate
+            
+            # Update object with state info
+            obj['state'] = estimate.state.value
+            obj['state_confidence'] = estimate.confidence
+            obj['blink_frequency'] = estimate.blink_frequency
+        
+        return state_results
+    
+    def _visualize(self, frame, tracked_objects: List[dict], state_results: Dict, frame_id: int):
         """Apply visualization overlays"""
         # Draw each detection
         for obj in tracked_objects:
-            key = (obj['track_id'], obj['class'])
+            key = (obj['track_id'], obj['class_name'])
             if key in state_results:
                 self.visualizer.draw_detection(
                     frame,
                     obj['bbox'],
                     state_results[key],
-                    obj['class'],
+                    obj['class_name'],
                     obj['track_id']
                 )
         
         # Draw info panel
         if self.config['visualization']['display']['show_info_panel']:
             state_dist = self.state_manager.get_statistics()['state_distribution'] if self.state_manager else None
+            
+            # Calculate FPS
+            fps = self.frame_count / (time.time() - self.start_time) if self.start_time else 0
+            
             self.visualizer.draw_info_panel(
                 frame,
                 frame_id,
-                self.fps,
+                fps,
                 0.0,  # Placeholder latency
                 len(tracked_objects),
                 state_dist
@@ -263,59 +320,153 @@ class IntegratedPerceptionPipeline:
         
         return frame
     
-    def _generate_debug_plots(self, frame_id: int):
-        """Generate debug plots for all active estimators"""
-        if self.state_manager is None:
-            return
+    def run(self, video_source: str = 0, max_frames: int = None):
+        """
+        Run complete pipeline.
         
-        for (track_id, light_type), estimator in self.state_manager.estimators.items():
-            self.debugger.plot_state_timeline(
-                estimator,
-                track_id,
-                light_type,
-                save=True
-            )
-    
-    def run(self, video_path: str = None):
-        """Run complete pipeline"""
-        print("Starting integrated pipeline...")
+        Args:
+            video_source: Video file path or camera index
+            max_frames: Maximum frames to process (None = infinite)
+        """
+        logger.info(f"\nStarting pipeline with source: {video_source}")
         
-        # Mock video capture (replace with actual camera)
-        frame_id = 0
+        # Open video source
+        cap = cv2.VideoCapture(video_source)
+        if not cap.isOpened():
+            raise RuntimeError(f"Failed to open video source: {video_source}")
         
-        for _ in range(300):  # Process 300 frames for demo
-            # Mock frame
-            frame = self._create_mock_frame()
-            timestamp = time.time()
-            
-            # Process frame
-            results = self.process_frame(frame, frame_id, timestamp)
-            
-            # Display (optional)
-            if self.visualizer is not None:
-                cv2.imshow('Perception Pipeline', frame)
-                if cv2.waitKey(1) & 0xFF == ord('q'):
+        self.start_time = time.time()
+        self.frame_count = 0
+        
+        try:
+            while True:
+                # Read frame
+                ret, frame = cap.read()
+                if not ret:
+                    logger.info("End of video stream")
                     break
-            
-            frame_id += 1
-            time.sleep(1/30)  # Simulate 30 FPS
+                
+                timestamp = time.time()
+                
+                # Process frame
+                results, annotated_frame = self.process_frame(
+                    frame, 
+                    self.frame_count, 
+                    timestamp
+                )
+                
+                # Display
+                if self.visualizer is not None:
+                    cv2.imshow('Automotive Perception Pipeline', annotated_frame)
+                    
+                    # Press 'q' to quit
+                    if cv2.waitKey(1) & 0xFF == ord('q'):
+                        logger.info("User requested stop")
+                        break
+                
+                self.frame_count += 1
+                
+                # Check max frames
+                if max_frames and self.frame_count >= max_frames:
+                    logger.info(f"Reached max frames: {max_frames}")
+                    break
+                
+                # Log progress
+                if self.frame_count % 30 == 0:
+                    fps = self.frame_count / (time.time() - self.start_time)
+                    logger.info(
+                        f"Frame {self.frame_count}: "
+                        f"{results['num_detections']} detections, "
+                        f"{results['latency']['total_ms']:.1f}ms, "
+                        f"{fps:.1f} FPS"
+                    )
         
-        cv2.destroyAllWindows()
-        print("Pipeline execution complete")
+        finally:
+            cap.release()
+            cv2.destroyAllWindows()
+            
+            # Log final statistics
+            total_time = time.time() - self.start_time
+            avg_fps = self.frame_count / total_time if total_time > 0 else 0
+            
+            logger.info("\n" + "=" * 60)
+            logger.info("Pipeline Execution Summary")
+            logger.info("=" * 60)
+            logger.info(f"Total frames: {self.frame_count}")
+            logger.info(f"Total time: {total_time:.2f}s")
+            logger.info(f"Average FPS: {avg_fps:.2f}")
+            
+            if self.detector:
+                det_stats = self.detector.get_statistics()
+                logger.info(f"Average detection latency: {det_stats['average_latency_ms']:.2f}ms")
     
-    def _create_mock_frame(self):
-        """Create mock frame for demo"""
-        return 255 * np.ones((720, 1280, 3), dtype=np.uint8)
+    def shutdown(self):
+        """Shutdown all pipeline components"""
+        logger.info("\nShutting down pipeline...")
+        
+        if self.detector:
+            self.detector.shutdown()
+        
+        logger.info("✓ Pipeline shutdown complete")
 
 
 def main():
-    """Entry point"""
-    config_path = "configs/pipeline_config.yaml"
+    """Main entry point"""
+    import argparse
     
-    pipeline = IntegratedPerceptionPipeline(config_path)
-    pipeline.run()
+    parser = argparse.ArgumentParser(description='Automotive Perception Pipeline')
+    parser.add_argument(
+        '--config',
+        type=str,
+        default='configs/pipeline_config_with_detection.yaml',
+        help='Path to pipeline configuration'
+    )
+    parser.add_argument(
+        '--source',
+        type=str,
+        default='0',
+        help='Video source (file path or camera index)'
+    )
+    parser.add_argument(
+        '--max-frames',
+        type=int,
+        default=None,
+        help='Maximum frames to process'
+    )
+    
+    args = parser.parse_args()
+    
+    # Convert source to int if it's a camera index
+    try:
+        source = int(args.source)
+    except ValueError:
+        source = args.source
+    
+    # Create pipeline
+    pipeline = AutomotivePerceptionPipeline(args.config)
+    
+    # Initialize
+    if not pipeline.initialize():
+        logger.error("Pipeline initialization failed")
+        return 1
+    
+    try:
+        # Run pipeline
+        pipeline.run(source, args.max_frames)
+        
+    except KeyboardInterrupt:
+        logger.info("\nInterrupted by user")
+    
+    except Exception as e:
+        logger.error(f"Pipeline error: {e}", exc_info=True)
+        return 1
+    
+    finally:
+        # Clean shutdown
+        pipeline.shutdown()
+    
+    return 0
 
 
 if __name__ == '__main__':
-    import numpy as np
-    main()
+    exit(main())
