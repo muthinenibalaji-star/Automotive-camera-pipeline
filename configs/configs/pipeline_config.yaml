@@ -1,5 +1,5 @@
 # Automotive Camera Pipeline Configuration
-# Updated with State Estimation Module
+# Updated with Detection Module (RTMDet) and State Estimation
 
 # System Settings
 system:
@@ -18,26 +18,44 @@ cameras:
     height: 1080
     fps: 30
 
-# Detection Model
+# ============================================
+# DETECTION CONFIGURATION (NEW)
+# ============================================
 detection:
-  model_type: "rtmdet"
-  config_path: "configs/rtmdet_config.py"
-  checkpoint_path: "models/rtmdet_weights.pth"
-  confidence_threshold: 0.5
-  nms_threshold: 0.45
-  device: "cuda"
-  fp16: true
+  # Backend selection
+  backend: rtmdet          # Currently: rtmdet (future: yolo, etc.)
   
-  # Light classes
-  classes:
-    - "left_indicator"
-    - "right_indicator"
-    - "brake_light"
-    - "reverse_light"
-    - "headlight"
-    - "fog_light"
-    - "tail_light"
-    - "hazard_light"
+  # Device settings
+  device: cuda             # cuda | cpu
+  fp16: true               # Enable FP16 inference (CUDA only)
+  
+  # Model configuration
+  model:
+    variant: s             # s | m (RTMDet-S or RTMDet-M)
+    
+    # Model files (adjust paths to your setup)
+    config_path: "models/rtmdet/configs/rtmdet_s_automotive_lights.py"
+    weights_path: "models/rtmdet/weights/rtmdet_s_lights_epoch_300.pth"
+    
+    # Input size (width, height)
+    input_size: [1280, 720]
+    
+    # Class names (order must match training)
+    class_names:
+      - "left_indicator"
+      - "right_indicator"
+      - "brake_light"
+      - "reverse_light"
+      - "headlight"
+      - "fog_light"
+      - "tail_light"
+      - "hazard_light"
+  
+  # Detection thresholds
+  thresholds:
+    score: 0.4              # Confidence threshold
+    nms: 0.45               # NMS IoU threshold
+    max_detections: 100     # Maximum detections per frame
 
 # Tracking Configuration
 tracking:
@@ -48,107 +66,137 @@ tracking:
   min_box_area: 100
 
 # ============================================
-# STATE ESTIMATION CONFIGURATION (NEW)
+# STATE ESTIMATION CONFIGURATION
 # ============================================
 state_estimation:
-  # Enable/disable state estimation
   enabled: true
   
-  # Temporal Window Configuration
-  window_size: 60              # frames (2 seconds at 30 FPS)
+  # Temporal window
+  window_size: 60  # frames (2 sec at 30 FPS)
   
-  # Activation Thresholds
-  on_threshold: 0.5            # Ratio of ON frames to classify as ON
-  off_threshold: 0.2           # Ratio of ON frames to classify as OFF
+  # State thresholds
+  on_threshold: 0.5
+  off_threshold: 0.2
   
-  # Blink Detection Parameters
+  # Blink detection
   blink_detection:
-    min_frequency: 0.5         # Hz - Minimum automotive blink rate
-    max_frequency: 3.0         # Hz - Maximum automotive blink rate
-    min_cycles: 2              # Minimum edge detections to confirm blinking
-    variance_threshold: 0.3    # Maximum variance for periodic signal
+    min_frequency: 0.5   # Hz
+    max_frequency: 3.0   # Hz
+    min_cycles: 2
+    variance_threshold: 0.3
   
-  # Confidence Parameters
+  # Confidence parameters
   confidence:
-    gain: 0.1                  # Increase per consistent frame
-    decay: 0.05                # Decrease per missed detection
-    reset_value: 0.3           # Reset value on state transition
-    min_threshold: 0.6         # Minimum confidence to report state
+    gain: 0.1
+    decay: 0.05
+    reset_value: 0.3
+    min_threshold: 0.6
   
-  # State Transition Parameters
+  # State transitions
   transition:
-    debounce_frames: 5         # Minimum frames before state change
+    debounce_frames: 5
   
-  # Track Management
+  # Track management
   cleanup:
-    stale_threshold: 5.0       # seconds - Remove inactive tracks
+    stale_threshold: 5.0  # seconds
 
 # ============================================
-# VISUALIZATION CONFIGURATION (NEW)
+# VISUALIZATION CONFIGURATION
 # ============================================
 visualization:
-  # Enable/disable real-time visualization
   enabled: true
   
-  # Display Options
+  # Display options
   display:
     show_labels: true
     show_confidence: true
     show_frequency: true
     show_info_panel: true
   
-  # Rendering Options
+  # Rendering options
   rendering:
     box_thickness: 2
     font_scale: 0.5
     font_thickness: 1
   
-  # Save Options
+  # Save options
   save_annotated_frames: false
-  save_frame_interval: 30      # Save every N frames
+  save_frame_interval: 30
 
 # ============================================
-# DEBUG CONFIGURATION (NEW)
+# DEBUG CONFIGURATION
 # ============================================
 debug:
-  # Enable/disable debug features
   enabled: false
   
-  # State Timeline Plots
+  # State timeline plots
   state_plots:
     enabled: false
     output_dir: "debug_plots"
-    save_interval: 300         # frames - Generate plots periodically
+    save_interval: 300
   
-  # Frequency Analysis Plots
+  # Frequency analysis
   frequency_analysis:
     enabled: false
     output_dir: "debug_plots/frequency"
   
-  # Validation Reports
+  # Validation reports
   validation_report:
     enabled: false
     output_dir: "debug_plots/reports"
-    generate_interval: 1000    # frames
+    generate_interval: 1000
+  
+  # Detection visualization
+  detection_debug:
+    enabled: false
+    save_detections: false
+    output_dir: "debug_plots/detections"
 
-# Output Configuration
+# ============================================
+# OUTPUT CONFIGURATION
+# ============================================
 output:
   format: "json"
   include_timestamps: true
   output_directory: "data/output"
   
-  # Enhanced Output Fields (NEW)
-  include_state_info: true     # Include FSM state in output
-  include_confidence: true     # Include confidence scores
+  # Output fields
+  include_detection_info: true
+  include_state_info: true
+  include_confidence: true
   include_activation_ratio: true
   
+  # Logging
   log_frames: false
   save_visualizations: true
   visualization_directory: "data/output/visualizations"
 
-# Performance Tuning
+# ============================================
+# PERFORMANCE CONFIGURATION
+# ============================================
 performance:
-  batch_size: 1
+  batch_size: 1            # Real-time: batch_size = 1
   num_workers: 2
   prefetch_frames: 3
   enable_profiling: false
+  
+  # Latency budgets (ms)
+  max_detection_latency: 30
+  max_tracking_latency: 15
+  max_state_estimation_latency: 5
+  max_total_latency: 100
+
+# ============================================
+# MODEL SWITCHING EXAMPLES
+# ============================================
+# To switch from RTMDet-S to RTMDet-M:
+# detection:
+#   model:
+#     variant: m
+#     config_path: "models/rtmdet/configs/rtmdet_m_automotive_lights.py"
+#     weights_path: "models/rtmdet/weights/rtmdet_m_lights_epoch_300.pth"
+
+# To use CPU instead of GPU:
+# detection:
+#   device: cpu
+#   fp16: false
