@@ -1,5 +1,5 @@
-yaml
 # Automotive Camera Pipeline Configuration
+# Updated with State Estimation Module
 
 # System Settings
 system:
@@ -17,14 +17,6 @@ cameras:
     width: 1920
     height: 1080
     fps: 30
-    
-  # Example: Additional cameras
-  # camera_1:
-  #   source_type: "dataset"
-  #   source: "/app/data/input/test_video.mp4"
-  #   width: 1920
-  #   height: 1080
-  #   fps: 30
 
 # Detection Model
 detection:
@@ -36,7 +28,7 @@ detection:
   device: "cuda"
   fp16: true
   
-  # Light classes - customize based on your model
+  # Light classes
   classes:
     - "left_indicator"
     - "right_indicator"
@@ -51,32 +43,107 @@ detection:
 tracking:
   method: "bytetrack"
   track_thresh: 0.5
-  track_buffer: 30        # Frames to keep lost tracks
-  match_thresh: 0.8       # IoU threshold for matching
-  min_box_area: 100       # Minimum bbox area
+  track_buffer: 30
+  match_thresh: 0.8
+  min_box_area: 100
 
-# State Estimation
+# ============================================
+# STATE ESTIMATION CONFIGURATION (NEW)
+# ============================================
 state_estimation:
-  # Intensity thresholds (0-255)
-  on_threshold: 120       # Brightness above this = ON
-  off_threshold: 50       # Brightness below this = OFF
+  # Enable/disable state estimation
+  enabled: true
   
-  # Blinking detection
-  blink_frequency_hz: [1.0, 2.0]  # Min, Max expected frequency
-  blink_window_frames: 60         # Analysis window size
-  min_blink_cycles: 2             # Minimum cycles to confirm blinking
+  # Temporal Window Configuration
+  window_size: 60              # frames (2 seconds at 30 FPS)
   
-  # Temporal filtering
-  temporal_window: 5              # Frames for smoothing
-  state_change_threshold: 3       # Min frames to change state
+  # Activation Thresholds
+  on_threshold: 0.5            # Ratio of ON frames to classify as ON
+  off_threshold: 0.2           # Ratio of ON frames to classify as OFF
+  
+  # Blink Detection Parameters
+  blink_detection:
+    min_frequency: 0.5         # Hz - Minimum automotive blink rate
+    max_frequency: 3.0         # Hz - Maximum automotive blink rate
+    min_cycles: 2              # Minimum edge detections to confirm blinking
+    variance_threshold: 0.3    # Maximum variance for periodic signal
+  
+  # Confidence Parameters
+  confidence:
+    gain: 0.1                  # Increase per consistent frame
+    decay: 0.05                # Decrease per missed detection
+    reset_value: 0.3           # Reset value on state transition
+    min_threshold: 0.6         # Minimum confidence to report state
+  
+  # State Transition Parameters
+  transition:
+    debounce_frames: 5         # Minimum frames before state change
+  
+  # Track Management
+  cleanup:
+    stale_threshold: 5.0       # seconds - Remove inactive tracks
+
+# ============================================
+# VISUALIZATION CONFIGURATION (NEW)
+# ============================================
+visualization:
+  # Enable/disable real-time visualization
+  enabled: true
+  
+  # Display Options
+  display:
+    show_labels: true
+    show_confidence: true
+    show_frequency: true
+    show_info_panel: true
+  
+  # Rendering Options
+  rendering:
+    box_thickness: 2
+    font_scale: 0.5
+    font_thickness: 1
+  
+  # Save Options
+  save_annotated_frames: false
+  save_frame_interval: 30      # Save every N frames
+
+# ============================================
+# DEBUG CONFIGURATION (NEW)
+# ============================================
+debug:
+  # Enable/disable debug features
+  enabled: false
+  
+  # State Timeline Plots
+  state_plots:
+    enabled: false
+    output_dir: "debug_plots"
+    save_interval: 300         # frames - Generate plots periodically
+  
+  # Frequency Analysis Plots
+  frequency_analysis:
+    enabled: false
+    output_dir: "debug_plots/frequency"
+  
+  # Validation Reports
+  validation_report:
+    enabled: false
+    output_dir: "debug_plots/reports"
+    generate_interval: 1000    # frames
 
 # Output Configuration
 output:
   format: "json"
   include_timestamps: true
   output_directory: "data/output"
-  log_frames: false               # Log every frame (verbose)
-  save_visualizations: true       # Save annotated images
+  
+  # Enhanced Output Fields (NEW)
+  include_state_info: true     # Include FSM state in output
+  include_confidence: true     # Include confidence scores
+  include_activation_ratio: true
+  
+  log_frames: false
+  save_visualizations: true
   visualization_directory: "data/output/visualizations"
 
 # Performance Tuning
