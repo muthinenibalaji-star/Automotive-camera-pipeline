@@ -119,6 +119,15 @@ Check your camera is connected, or use a video file with `--source "path/to/vide
 
 ---
 
+## Training on Custom Data
+
+Want to detect your own objects? See our **[Training Guide](docs/TRAINING_GUIDE.md)** for step-by-step instructions on:
+1. Collecting and annotating data
+2. Configuring MMDetection
+3. Fine-tuning RTMDet on your dataset
+
+---
+
 ## Requirements
 
 - Python 3.9+
