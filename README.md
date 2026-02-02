@@ -1,468 +1,132 @@
-# Automotive Camera Pipeline - State Estimation Update
+# Automotive Camera Pipeline
 
-## 🚀 What's New: Deterministic State Estimation Module
+Real-time automotive light state detection and classification system using RTMDet and FSM-based state estimation.
 
-This update introduces a **production-ready Finite State Machine (FSM)** for automotive light state classification, transforming noisy frame-wise detections into temporally consistent, explainable state estimates.
+## Features
 
-### Key Features
-
-✅ **Deterministic FSM Logic** - No ML in state classification  
-✅ **Temporal Consistency** - Sliding window eliminates flicker  
-✅ **Blink Detection** - Frequency-based periodic signal analysis  
-✅ **Confidence Modeling** - Exponentially weighted temporal confidence  
-✅ **Multi-Object Tracking** - Scales to multiple vehicles  
-✅ **Real-Time Visualization** - Color-coded debug overlays  
-✅ **Validation Tools** - Offline plots for system validation  
-✅ **Production-Ready** - Comprehensive tests and documentation  
+- **Object Detection** — RTMDet-based light detection (brake lights, indicators, etc.)
+- **State Estimation** — Deterministic FSM classifies lights as OFF, ON, or BLINK
+- **Real-Time Visualization** — Color-coded bounding boxes with state labels
+- **Blink Detection** — Frequency analysis for turn signal identification
 
 ---
 
-## 📁 Repository Structure
+## Quick Start (Windows)
+
+### 1. Clone and Setup
+```powershell
+# Clone the repository
+git clone https://github.com/muthinenibalaji-star/Automotive-camera-pipeline.git
+cd Automotive-camera-pipeline
+
+# Create virtual environment
+python -m venv .venv
+.venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Install MMDetection (required for detection)
+pip install -U openmim
+mim install mmcv>=2.0.0 mmdet>=3.0.0
+```
+
+### 2. Download Model Weights
+```powershell
+mim download mmdet --config rtmdet_tiny_8xb32-300e_coco --dest models
+```
+
+### 3. Run the Pipeline
+
+**With a video file:**
+```powershell
+python src/main.py --config configs/pipeline_config.yaml --source "path/to/video.mp4"
+```
+
+**With webcam:**
+```powershell
+python src/main.py --config configs/pipeline_config.yaml --source 0
+```
+
+> **Tip**: Press `Q` to quit the visualization window.
+
+---
+
+## Project Structure
 
 ```
-automotive-camera-pipeline/
+Automotive-camera-pipeline/
+├── src/
+│   └── main.py                    # Main entry point
 ├── pipeline/
-│   ├── state_estimation/           # ✨ NEW: FSM-based state estimation
-│   │   ├── light_state_estimator.py   # Core FSM implementation
-│   │   ├── state_manager.py            # Multi-object management
-│   │   └── state_debugger.py           # Visualization tools
-│   │
-│   ├── visualization/               # ✨ NEW: Real-time overlays
-│   │   └── perception_visualizer.py
-│   │
-│   ├── detection/                   # (Your existing detection code)
-│   ├── tracking/                    # (Your existing tracking code)
-│   └── ...
-│
+│   ├── detection/                 # RTMDet detector
+│   ├── state_estimation/          # FSM-based state classification
+│   └── visualization/             # Real-time overlays
 ├── configs/
-│   └── pipeline_config.yaml        # ✨ UPDATED: Added state estimation config
-│
-├── examples/
-│   └── integrated_pipeline_example.py  # ✨ NEW: Complete integration example
-│
-├── tests/
-│   └── test_state_estimation.py    # ✨ NEW: Comprehensive unit tests
-│
-├── docs/
-│   └── STATE_ESTIMATION_GUIDE.md   # ✨ NEW: Complete documentation
-│
-└── README.md                        # ✨ UPDATED: This file
+│   └── pipeline_config.yaml       # Main configuration
+├── models/                        # Model weights (downloaded)
+├── data/
+│   ├── input/                     # Place test videos here
+│   └── output/                    # Results saved here
+└── examples/
+    └── integrated_pipeline_example.py
 ```
 
 ---
 
-## 🎯 Quick Start
+## Configuration
 
-### Installation
+Edit `configs/pipeline_config.yaml` to customize:
 
-No additional dependencies! Uses standard libraries:
-```bash
-# Already have these from base pipeline
-pip install numpy matplotlib opencv-python pyyaml
+| Setting | Description | Default |
+|---------|-------------|---------|
+| `detection.device` | `cuda` or `cpu` | `cpu` |
+| `detection.thresholds.score` | Confidence threshold | `0.5` |
+| `cameras.camera_0.source` | Video source | `0` (webcam) |
+| `state_estimation.on_threshold` | ON state threshold | `120` |
+
+---
+
+## Output States
+
+| State | Color | Meaning |
+|-------|-------|---------|
+| **UNKNOWN** | Gray | Insufficient data |
+| **OFF** | Blue | Light is off |
+| **ON** | Magenta | Light is on continuously |
+| **BLINK** | Orange | Periodic blinking detected |
+
+---
+
+## Troubleshooting
+
+### "No module named 'cv2'"
+```powershell
+pip install opencv-python
 ```
 
-### Basic Usage
-
-```python
-from pipeline.state_estimation import StateManager, StateEstimatorConfig, DetectionInput
-
-# 1. Initialize state manager
-config = StateEstimatorConfig(
-    window_size=60,      # 2 seconds at 30 FPS
-    on_threshold=0.5,
-    off_threshold=0.2
-)
-state_manager = StateManager(config, fps=30.0)
-
-# 2. In your pipeline loop
-for detection in tracked_objects:
-    # Create input
-    det_input = DetectionInput(
-        track_id=detection['track_id'],
-        light_type=detection['class'],
-        is_active=detection['is_active'],  # Binary: True/False
-        confidence=detection['confidence'],
-        timestamp=current_timestamp
-    )
-    
-    # Update state
-    state_estimate = state_manager.update(det_input)
-    
-    # Use result
-    print(f"State: {state_estimate.state.value}")
-    print(f"Confidence: {state_estimate.confidence:.2f}")
-    if state_estimate.blink_frequency:
-        print(f"Blink: {state_estimate.blink_frequency:.1f} Hz")
+### "No module named 'mmdet'"
+```powershell
+pip install -U openmim
+mim install mmcv>=2.0.0 mmdet>=3.0.0
 ```
 
-### Run Example
+### CUDA not available
+Set `detection.device: "cpu"` in `configs/pipeline_config.yaml`
 
-```bash
-python examples/integrated_pipeline_example.py
-```
-
----
-
-## 🔄 State Machine
-
-### States
-
-| State | Description | Transition Criteria |
-|-------|-------------|---------------------|
-| **UNKNOWN** | Initial state | Insufficient data |
-| **OFF** | Light inactive | activation_ratio < 0.2 |
-| **ON** | Light continuously active | activation_ratio > 0.5 |
-| **BLINK** | Periodic activation (indicator) | Periodic signal detected (0.5-3 Hz) |
-
-### State Transitions
-
-```mermaid
-graph LR
-    UNKNOWN --> OFF
-    UNKNOWN --> ON
-    UNKNOWN --> BLINK
-    OFF <--> ON
-    OFF --> BLINK
-    ON --> BLINK
-    BLINK --> OFF
-    BLINK --> ON
-```
-
-**Hysteresis**: All transitions require 5 consecutive frames (configurable)
+### Camera not found
+Check your camera is connected, or use a video file with `--source "path/to/video.mp4"`
 
 ---
 
-## 📊 Example Output
+## Requirements
 
-### JSON Output (Enhanced)
-
-```json
-{
-  "frame_id": 1234,
-  "timestamp": 41.133,
-  "detections": [
-    {
-      "track_id": 5,
-      "class": "left_indicator",
-      "bbox": [100, 200, 50, 30],
-      "confidence": 0.95,
-      "state": "BLINK",              // ✨ NEW
-      "state_confidence": 0.87,      // ✨ NEW
-      "blink_frequency": 1.5,        // ✨ NEW
-      "activation_ratio": 0.48       // ✨ NEW
-    },
-    {
-      "track_id": 5,
-      "class": "brake_light",
-      "bbox": [300, 200, 60, 35],
-      "confidence": 0.92,
-      "state": "ON",                 // ✨ NEW
-      "state_confidence": 0.95,      // ✨ NEW
-      "activation_ratio": 0.98       // ✨ NEW
-    }
-  ]
-}
-```
-
-### Visualization
-
-Real-time color-coded overlays:
-
-- **Gray** = UNKNOWN
-- **Blue** = OFF
-- **Magenta** = ON
-- **Orange** = BLINK
-
-Each bounding box shows:
-- Track ID
-- Light type
-- State
-- Confidence
-- Blink frequency (if applicable)
+- Python 3.9+
+- Windows 10/11 or Linux
+- (Optional) NVIDIA GPU with CUDA for faster inference
 
 ---
 
-## 🔧 Configuration
+## License
 
-Add to your `pipeline_config.yaml`:
-
-```yaml
-state_estimation:
-  enabled: true
-  
-  # Temporal window
-  window_size: 60  # frames (2 sec at 30 FPS)
-  
-  # State thresholds
-  on_threshold: 0.5
-  off_threshold: 0.2
-  
-  # Blink detection
-  blink_detection:
-    min_frequency: 0.5   # Hz
-    max_frequency: 3.0   # Hz
-    min_cycles: 2
-    variance_threshold: 0.3
-  
-  # Confidence parameters
-  confidence:
-    gain: 0.1
-    decay: 0.05
-    reset_value: 0.3
-    min_threshold: 0.6
-  
-  # State transitions
-  transition:
-    debounce_frames: 5
-
-# Visualization
-visualization:
-  enabled: true
-  display:
-    show_labels: true
-    show_confidence: true
-    show_frequency: true
-
-# Debug mode
-debug:
-  enabled: false
-  state_plots:
-    enabled: false
-    output_dir: "debug_plots"
-```
-
----
-
-## 🧪 Testing
-
-### Run Unit Tests
-
-```bash
-pytest tests/test_state_estimation.py -v
-```
-
-**Test Coverage**:
-- State transitions: ✓
-- Blink frequency detection: ✓
-- Confidence modeling: ✓
-- Multi-object tracking: ✓
-- Edge cases: ✓
-
-### Validation Workflow
-
-1. Enable debug mode in config
-2. Process test video
-3. Review generated plots in `debug_plots/`
-4. Verify state timelines match ground truth
-
----
-
-## 📈 Performance
-
-### Benchmarks
-
-| Configuration | Latency | Memory |
-|--------------|---------|--------|
-| Single vehicle (8 lights) | < 0.5 ms | 1.5 MB |
-| Multi-vehicle (32 lights) | < 2 ms | 6 MB |
-| Large scene (100 objects) | < 20 ms | 18 MB |
-
-**Total Pipeline Latency**: ~41 ms (Detection: 30ms + Tracking: 10ms + State: <1ms)
-
-### Scalability
-
-- **Linear scaling** with number of objects
-- **Independent estimators** per (track_id, light_type)
-- **Automatic cleanup** of stale tracks
-- **Thread-safe** operations
-
----
-
-## 🎓 Documentation
-
-### Complete Guides
-
-1. **[STATE_ESTIMATION_GUIDE.md](docs/STATE_ESTIMATION_GUIDE.md)** - Comprehensive documentation
-   - Architecture overview
-   - API reference
-   - Configuration tuning
-   - Integration guide
-   - Troubleshooting
-
-2. **[integrated_pipeline_example.py](examples/integrated_pipeline_example.py)** - Working code example
-
-3. **[test_state_estimation.py](tests/test_state_estimation.py)** - Test reference
-
----
-
-## 🔬 Technical Details
-
-### Algorithm Overview
-
-1. **Temporal Window**: Stores last 60 frames of binary activations
-2. **Activation Ratio**: Computes fraction of ON frames
-3. **Edge Detection**: Identifies rising edges (OFF → ON transitions)
-4. **Frequency Estimation**: Analyzes inter-edge intervals
-5. **Periodicity Validation**: Checks variance of intervals
-6. **FSM Transition**: Deterministic state update with hysteresis
-7. **Confidence Update**: Exponentially weighted temporal confidence
-
-### Key Design Decisions
-
-| Decision | Rationale |
-|----------|-----------|
-| FSM over ML | Deterministic, explainable, safety-friendly |
-| Time-domain blink | Simple, robust, no FFT overhead |
-| Separate confidence | Independent of detector confidence |
-| Lazy initialization | Memory-efficient for sparse scenes |
-| Debounce frames | Prevents rapid oscillation |
-
----
-
-## 🚗 Automotive Compliance
-
-### ✅ Deterministic Behavior
-- No neural networks in state logic
-- Reproducible from same inputs
-- Fully traceable transitions
-
-### ✅ Explainability
-- Clear state criteria
-- Explicit transition rules
-- Debug visualization tools
-
-### ✅ Validation-Ready
-- Offline validation plots
-- Unit test coverage >90%
-- Configuration-driven tuning
-- A/B comparison support
-
-### ✅ Production Quality
-- Comprehensive documentation
-- Error handling
-- Performance profiling
-- Integration examples
-
----
-
-## 🛠️ Integration with Existing Pipeline
-
-### Minimal Changes Required
-
-Your existing pipeline needs **only 3 small changes**:
-
-#### 1. Initialize State Manager (Once)
-
-```python
-from pipeline.state_estimation import StateManager, StateEstimatorConfig
-
-config = StateEstimatorConfig()  # Use defaults or customize
-state_manager = StateManager(config, fps=30.0)
-```
-
-#### 2. Update States (In Loop)
-
-```python
-# After tracking, before output
-for detection in tracked_objects:
-    det_input = DetectionInput(
-        track_id=detection['track_id'],
-        light_type=detection['class'],
-        is_active=detection['is_active'],  # Add this field
-        confidence=detection['confidence'],
-        timestamp=current_timestamp
-    )
-    
-    estimate = state_manager.update(det_input)
-    detection['state'] = estimate.state.value
-    detection['state_confidence'] = estimate.confidence
-```
-
-#### 3. Optional: Visualize
-
-```python
-from pipeline.visualization import PerceptionVisualizer
-
-visualizer = PerceptionVisualizer()
-frame = visualizer.draw_detection(frame, bbox, estimate, ...)
-```
-
-**That's it!** No refactoring needed.
-
----
-
-## 📦 What's Included
-
-### New Files
-
-- ✅ `pipeline/state_estimation/` - Complete FSM module (3 files)
-- ✅ `pipeline/visualization/` - Real-time overlay renderer
-- ✅ `examples/integrated_pipeline_example.py` - Working integration
-- ✅ `tests/test_state_estimation.py` - Comprehensive tests
-- ✅ `docs/STATE_ESTIMATION_GUIDE.md` - Full documentation
-- ✅ Updated `configs/pipeline_config.yaml` - New settings
-
-### Modified Files
-
-- 📝 `README.md` - This file (updated overview)
-- 📝 `pipeline_config.yaml` - Added state estimation config
-
-### No Breaking Changes
-
-- ✅ Existing pipeline code works unchanged
-- ✅ Backward compatible configuration
-- ✅ Optional feature (can be disabled)
-
----
-
-## 🔮 Future Enhancements
-
-Planned for v2.0:
-
-- [ ] Hidden Markov Model (HMM) alternative
-- [ ] FFT-based frequency analysis
-- [ ] Adaptive threshold tuning
-- [ ] Multi-camera fusion
-- [ ] Dashboard light support
-- [ ] Interior light support
-
----
-
-## 📞 Support
-
-### Resources
-
-- **Documentation**: [STATE_ESTIMATION_GUIDE.md](docs/STATE_ESTIMATION_GUIDE.md)
-- **Example Code**: [integrated_pipeline_example.py](examples/integrated_pipeline_example.py)
-- **Tests**: `pytest tests/test_state_estimation.py -v`
-- **Config**: `configs/pipeline_config.yaml`
-
-### Troubleshooting
-
-Common issues and solutions in [STATE_ESTIMATION_GUIDE.md](docs/STATE_ESTIMATION_GUIDE.md#troubleshooting)
-
-### Contact
-
-- **Team**: perception-team@company.com
-- **GitHub Issues**: [Create issue](../../issues)
-
----
-
-## 📄 License
-
-Proprietary - Internal use only
-
----
-
-## 🙏 Acknowledgments
-
-Developed by the Automotive Perception Team based on:
-- Tier-1 automotive software best practices
-- Safety-critical system design principles
-- Real-world HIL validation requirements
-
----
-
-**Version**: 2.0.0 (State Estimation Update)  
-**Release Date**: January 2026  
-**Status**: Production-Ready ✅
+MIT License - See [LICENSE](LICENSE)

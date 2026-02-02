@@ -1,0 +1,79 @@
+# Automotive Camera Pipeline Configuration
+
+# System Settings
+system:
+  num_cameras: 1
+  target_fps: 30
+  max_latency_ms: 100
+  gpu_device: 0
+  log_level: INFO
+
+# Camera Settings
+cameras:
+  camera_0:
+    source_type: "usb"  # Options: usb, dataset, industrial
+    source: 0           # Device index or path
+    width: 1920
+    height: 1080
+    fps: 30
+    
+# Detection Model
+detection:
+  backend: "rtmdet"
+  device: "cpu"
+  fp16: true
+  
+  model:
+    variant: "s"
+    config_path: "models/rtmdet_tiny_8xb32-300e_coco.py"
+    weights_path: "models/rtmdet_tiny_8xb32-300e_coco_20220902_112414-78e30dcc.pth"
+    input_size: [1280, 720]
+    class_names:
+      - "left_indicator"
+      - "right_indicator"
+      - "brake_light"
+      - "reverse_light"
+      - "headlight"
+      - "fog_light"
+  
+  thresholds:
+    score: 0.5
+    nms: 0.45
+    max_detections: 100
+
+# Tracking
+tracking:
+  method: "bytetrack"
+  track_thresh: 0.5
+  track_buffer: 30
+  match_thresh: 0.8
+  min_box_area: 100
+
+# State Estimation
+state_estimation:
+  # Intensity thresholds
+  on_threshold: 120
+  off_threshold: 50
+  
+  # Blinking detection
+  blink_frequency_hz: [1.0, 2.0]  # Min, Max
+  blink_window_frames: 60
+  min_blink_cycles: 2
+  
+  # Temporal filtering
+  temporal_window: 5
+  state_change_threshold: 3
+
+# Output
+output:
+  format: "json"
+  include_timestamps: true
+  output_directory: "data/output"
+  log_frames: false
+  save_visualizations: true
+
+# Performance
+performance:
+  batch_size: 1
+  num_workers: 2
+  prefetch_frames: 3

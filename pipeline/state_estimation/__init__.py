@@ -1,4 +1,4 @@
-
+"""
 State Estimation Module
 
 Provides deterministic, FSM-based state estimation for automotive lights.
