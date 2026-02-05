@@ -1,104 +1,268 @@
-# Training Guide: Customizing RTMDet for Your Data
+# RTMDet-m Training Guide for Vehicle Lights Detection
 
-To improve detection accuracy or add new classes (e.g., specific traffic signs, different vehicle types), you'll need to fine-tune the model on your own data.
+This guide explains how to train the RTMDet-m model on the custom vehicle lights dataset for robust lamp lens detection.
 
-## 1. Data Collection
-Capture diverse scenarios to make the model robust.
-- **Varied Conditions**: Day, night, rain, tunnels.
-- **Angles**: Front, rear, side views of vehicles.
-- **Edge Cases**: Partially occluded vehicles, distant lights.
+## Overview
 
-**Goal**: Aim for ~500-1000 labeled images per class for good results.
+**Model**: RTMDet-m (medium variant)  
+**Task**: Detect 12 vehicle lamp lens classes  
+**Input Resolution**: 1920×1080  
+**Framework**: MMDetection (PyTorch)  
 
-## 2. Annotation
-You need to label your images. RTMDet (via MMDetection) typically uses **COCO format**.
+### 12 Vehicle Light Classes (Exact Order)
 
-### Recommended Tools
-1. **CVAT (Computer Vision Annotation Tool)** - Best for video
-   - Fast interpolation (label one frame, skip 10, it fills in between).
-   - Export format: `COCO 1.0`
-2. **LabelImg** - Good for single images
-   - Simple, lightweight.
-   - Saves as Pascal VOC (XML) or YOLO (TXT). You'll need to convert to COCO.
-3. **Roboflow** - Online platform
-   - Easy drag-and-drop labeling.
-   - **One-click export to MMDetection (COCO) format.** (Highly recommended for beginners).
-
-## 3. Training Workflow (MMDetection)
-
-### Step A: Prepare Dataset
-Organize folders like this:
 ```
-data/
-  coco/
-    annotations/
-      instances_train2017.json
-      instances_val2017.json
-    train2017/   # Images
-    val2017/     # Images
+1. front_headlight_left
+2. front_headlight_right
+3. front_indicator_left
+4. front_indicator_right
+5. front_all_weather_left
+6. front_all_weather_right
+7. rear_brake_left
+8. rear_brake_right
+9. rear_indicator_left
+10. rear_indicator_right
+11. rear_tailgate_left
+12. rear_tailgate_right
 ```
 
-### Step B: Create Config File
-Create `configs/rtmdet_custom_training.py` that inherits from the base config but modifies classes.
+**CRITICAL**: This order must match exactly in your COCO annotations.
 
-```python
-# Inherit from base config
-_base_ = 'models/rtmdet_tiny_8xb32-300e_coco.py'
+---
 
-# 1. Dataset settings
-dataset_type = 'CocoDataset'
-classes = ('my_class_1', 'my_class_2', 'brake_light')
-data_root = 'data/coco/'
+## Prerequisites
 
-# 2. Model head (adjust num_classes)
-model = dict(
-    bbox_head=dict(
-        num_classes=3  # Change to your number of classes
-    )
-)
+### 1. Environment Setup
 
-# 3. Dataloader settings
-train_dataloader = dict(
-    dataset=dict(
-        data_root=data_root,
-        metainfo=dict(classes=classes),
-        ann_file='annotations/instances_train2017.json',
-        data_prefix=dict(img='train2017/')
-    )
-)
+Ensure you have installed:
+- Python 3.8+
+- PyTorch + CUDA (GPU required)
+- MMEngine, MMCV, MMDetection
 
-val_dataloader = dict(
-    dataset=dict(
-        data_root=data_root,
-        metainfo=dict(classes=classes),
-        ann_file='annotations/instances_val2017.json',
-        data_prefix=dict(img='val2017/')
-    )
-)
-
-test_dataloader = val_dataloader
-```
-
-### Step C: Run Training
 ```powershell
-# Train using mim (automatically handles dependencies)
-mim train mmdet configs/rtmdet_custom_training.py
+# Install MMDetection ecosystem
+pip install -U openmim
+mim install "mmcv>=2.0.0" "mmdet>=3.0.0"
 ```
 
-This will produce a new `.pth` weight file in `work_dirs/`.
+### 2. Dataset Preparation
 
-## 4. Improving Performance
-- **Data Augmentation**: Flip, rotate, change brightness (MMDetection does this automatically in the config's pipeline).
-- **Hard Negative Mining**: If the model frequently mistakes a red mailbox for a brake light, add many images of red mailboxes to the dataset *without* labels (background images) or label them effectively.
-- **Model Size**: If RTMDet-Tiny is too inaccurate, switch to **RTMDet-s** or **RTMDet-m** (larger, slower, but smarter).
+Your dataset must be in **COCO format** and organized as:
 
-## 5. Deployment
-Once trained:
-1. Copy the new `.pth` file to `models/`.
-2. Update `configs/pipeline_config.yaml`:
-   ```yaml
-   detection:
-     model:
-       config_path: "configs/rtmdet_custom_training.py"
-       weights_path: "models/best_epoch_300.pth"
+```
+data/vehicle_lights/
+├── annotations/
+│   ├── train.json
+│   ├── val.json
+│   └── test.json
+├── train/          # Training images
+├── val/            # Validation images
+└── test/           # Test images
+```
+
+See `data/vehicle_lights/README.md` for detailed format requirements.
+
+---
+
+## Pre-Training Validation (MANDATORY)
+
+Before training, **always** run these sanity checks:
+
+### 1. Dataset Sanity Check
+
+```bash
+python tools/dataset_sanity_check.py \
+    --ann-file data/vehicle_lights/annotations/train.json \
+    --img-dir data/vehicle_lights/train/
+```
+
+This validates:
+- COCO JSON structure
+- Bbox validity (within bounds, non-zero area)
+- Class distribution
+- File existence
+
+### 2. Category Mapping Validation
+
+```bash
+python tools/category_mapping_validator.py \
+    --config configs/vehicle_lights/rtmdet_m_vehicle_lights.py \
+    --ann-file data/vehicle_lights/annotations/train.json
+```
+
+This ensures COCO `category_id` mapping aligns with config class order.
+
+### 3. Visual Inspection (Recommended)
+
+```bash
+python tools/visualize_samples.py \
+    --ann-file data/vehicle_lights/annotations/train.json \
+    --img-dir data/vehicle_lights/train/ \
+    --output-dir visualizations/ \
+    --num-samples 200
+```
+
+Inspect `visualizations/` to verify:
+- Labels follow **lens boundary** (not just bright core)
+- Consistent labeling across ON/OFF states
+- No mislabeled bboxes
+
+---
+
+## Training
+
+### Basic Training
+
+```bash
+python tools/train.py configs/vehicle_lights/rtmdet_m_vehicle_lights.py
+```
+
+The script will:
+1. Run pre-flight sanity checks automatically
+2. Start training with default settings
+3. Save checkpoints to `work_dirs/rtmdet_m_vehicle_lights/`
+
+### Advanced Options
+
+**Auto-scale learning rate** (if changing batch size):
+```bash
+python tools/train.py configs/vehicle_lights/rtmdet_m_vehicle_lights.py --auto-scale-lr
+```
+
+**Resume training** from checkpoint:
+```bash
+python tools/train.py configs/vehicle_lights/rtmdet_m_vehicle_lights.py --resume
+```
+
+**Custom work directory**:
+```bash
+python tools/train.py configs/vehicle_lights/rtmdet_m_vehicle_lights.py --work-dir custom_output/
+```
+
+**Skip sanity checks** (NOT recommended):
+```bash
+python tools/train.py configs/vehicle_lights/rtmdet_m_vehicle_lights.py --skip-sanity-checks
+```
+
+---
+
+## Training Configuration Details
+
+The config `configs/vehicle_lights/rtmdet_m_vehicle_lights.py` includes:
+
+- **Model**: RTMDet-m with 12 classes
+- **Input size**: 1920×1080
+- **Batch size**: 8 (adjust based on GPU memory)
+- **Epochs**: 300 (with pipeline switch at epoch 280)
+- **Augmentations**: 
+  - CachedMosaic + RandomResize (conservative ranges)
+  - Mild color jitter (YOLOXHSVRandomAug)
+  - RandomFlip
+  - **No aggressive crops** (to preserve lamp visibility)
+
+**Why conservative augmentations?**  
+OFF-state lenses are small and low-contrast. Aggressive crops or rotations can cut off lamps or make them undetectable.
+
+---
+
+## Evaluation
+
+### Evaluate on Validation Set
+
+```bash
+python tools/test.py \
+    configs/vehicle_lights/rtmdet_m_vehicle_lights.py \
+    work_dirs/rtmdet_m_vehicle_lights/epoch_300.pth
+```
+
+### Evaluate on Test Set
+
+Modify config to use test dataloader, then:
+```bash
+python tools/test.py \
+    configs/vehicle_lights/rtmdet_m_vehicle_lights.py \
+    work_dirs/rtmdet_m_vehicle_lights/best_coco_bbox_mAP_epoch_*.pth
+```
+
+### Metrics to Monitor
+
+- **Per-class AP** (Average Precision)
+- **Per-class Recall** (especially for OFF states)
+- **Confusion Matrix** (check for brake vs indicator confusion)
+
+---
+
+## Common Issues & Troubleshooting
+
+### 1. Low OFF-State Recall
+**Problem**: Model detects ON lenses well but misses OFF lenses.  
+**Solutions**:
+- Ensure OFF coverage ≥30% in training data
+- Label lens boundary consistently (not just bright core)
+- Increase input resolution (already at 1920×1080)
+- Reduce NMS threshold in test config
+
+### 2. Class Imbalance
+**Problem**: Some classes have 10x fewer samples than others.  
+**Solutions**:
+- Collect more data for underrepresented classes
+- Use weighted sampling (modify config)
+
+### 3. Category Mapping Errors
+**Problem**: Category IDs don't match config class order.  
+**Solution**: Run `category_mapping_validator.py` and fix COCO JSON or config order.
+
+### 4. Bbox Annotation Issues
+**Problem**: Bboxes cut off lamp edges or include too much background.  
+**Solution**: 
+- Re-annotate with lens boundary guidelines
+- Run `visualize_samples.py` to audit annotations
+
+---
+
+## Dataset Requirements (Checklist)
+
+Before claiming "dataset ready for training":
+
+- [ ] **COCO format** with `images`, `annotations`, `categories` keys
+- [ ] **Category IDs** match config class order (validated)
+- [ ] **Lens boundary labels** (not just bright core)
+- [ ] **Scenario-based split** (not random frame split)
+- [ ] **Coverage matrix**:
+  - [ ] Multiple camera angles
+  - [ ] Multiple lighting conditions (normal, low, glare)
+  - [ ] OFF-state coverage ≥30% per class
+- [ ] **Validation passed**:
+  - [ ] `dataset_sanity_check.py` 
+  - [ ] `category_mapping_validator.py`
+  - [ ] `visualize_samples.py` (manual review)
+
+---
+
+## Next Steps After Training
+
+1. **Evaluate** on test set
+2. **Analyze** per-class metrics and confusion matrix
+3. **Deploy** checkpoint for inference:
+   ```python
+   from mmdet.apis import DetInferencer
+   
+   inferencer = DetInferencer(
+       model='configs/vehicle_lights/rtmdet_m_vehicle_lights.py',
+       weights='work_dirs/rtmdet_m_vehicle_lights/best_coco_bbox_mAP_epoch_*.pth'
+   )
+   
+   result = inferencer('test_image.jpg', out_dir='output/')
    ```
+
+4. **Integrate** with pipeline (see `pipeline/detection/` modules)
+
+---
+
+## References
+
+- [RTMDet Paper](https://arxiv.org/abs/2212.07784)
+- [MMDetection Docs](https://mmdetection.readthedocs.io/)
+- [COCO Dataset Format](https://cocodataset.org/#format-data)
+- Training Guide Source: `RTMDet-m_Training_Guide_Custom_Vehicle_Lights_v1.1_clean.md`
+- Pipeline Playbook: `Claude_4_5_Playbook_Vehicle_Lights_Pipeline_Team_Guide_v1.3_clean.md`
