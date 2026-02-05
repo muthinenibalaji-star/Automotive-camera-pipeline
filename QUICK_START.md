@@ -4,54 +4,64 @@ Get up and running in under 5 minutes!
 
 ---
 
-## Option 1: Automated Setup (Recommended)
+## One-Click Setup (Recommended)
 
-**Right-click `setup.ps1` → "Run with PowerShell"**
+**Double-click `setup.bat`** or run in PowerShell:
+
+```powershell
+.\setup.bat
+```
 
 This will:
-1. Create virtual environment
-2. Install all dependencies
-3. Download model weights
-4. Create data directories
-
-Then run: `.\run.ps1 "data\input\your_video.mp4"`
+1. ✅ Create virtual environment
+2. ✅ Install all Python dependencies
+3. ✅ Install MMDetection ecosystem
+4. ✅ Download RTMDet model weights
+5. ✅ Create all required directories
 
 ---
 
-## Option 2: Manual Setup
+## Running the Pipeline
 
-### Step 1: Create Virtual Environment
+### Activate Environment
 ```powershell
-cd Automotive-camera-pipeline
-python -m venv .venv
-.venv\Scripts\Activate.ps1
+.venv\Scripts\activate
 ```
 
-### Step 2: Install Dependencies
+### Inference (Pre-trained Model)
 ```powershell
-pip install -r requirements.txt
-pip install -U openmim
-mim install "mmcv>=2.0.0" "mmdet>=3.0.0"
-```
+# With webcam
+python src\main.py --config configs\pipeline_config.yaml --source 0
 
-### Step 3: Download Model Weights
-```powershell
-mim download mmdet --config rtmdet_tiny_8xb32-300e_coco --dest models
-```
-
-### Step 4: Run the Pipeline
-```powershell
-python src/main.py --config configs/pipeline_config.yaml --source "path/to/video.mp4"
+# With video file
+python src\main.py --config configs\pipeline_config.yaml --source "data\input\your_video.mp4"
 ```
 
 ---
 
-## Test Videos
+## Training on Custom Data
 
-Place test videos in `data/input/` and run:
-```powershell
-.\run.ps1 "data\input\test_video.mp4"
+### 1. Prepare Dataset
+Place COCO-format dataset in `data/vehicle_lights/`:
 ```
+data/vehicle_lights/
+├── annotations/train.json
+├── annotations/val.json
+├── train/  (images)
+└── val/    (images)
+```
+
+### 2. Validate Dataset
+```powershell
+python tools\dataset_sanity_check.py --ann-file data\vehicle_lights\annotations\train.json --img-dir data\vehicle_lights\train\
+```
+
+### 3. Start Training
+```powershell
+python tools\train.py configs\vehicle_lights\rtmdet_m_vehicle_lights.py
+```
+
+See [docs/TRAINING_GUIDE.md](docs/TRAINING_GUIDE.md) for detailed instructions.
 
 ---
 
@@ -68,18 +78,19 @@ Place test videos in `data/input/` and run:
 ## Common Issues
 
 ### "ModuleNotFoundError: No module named 'mmdet'"
-Run: `mim install mmdet>=3.0.0`
+```powershell
+pip install -U openmim
+mim install "mmcv>=2.0.0" "mmdet>=3.0.0"
+```
 
 ### "CUDA out of memory"  
 Edit `configs/pipeline_config.yaml` and set `detection.device: "cpu"`
-
-### Camera not working
-Use a video file instead: `--source "path/to/video.mp4"`
 
 ---
 
 ## Next Steps
 
-- Edit `configs/pipeline_config.yaml` to customize detection settings
+- Edit `configs/pipeline_config.yaml` to customize settings
 - See [README.md](README.md) for full documentation
-- Check `examples/` for integration examples
+- Check [docs/TRAINING_GUIDE.md](docs/TRAINING_GUIDE.md) for training
+

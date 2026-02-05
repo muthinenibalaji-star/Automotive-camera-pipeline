@@ -17,11 +17,25 @@ data/output/*
 data/datasets/*
 !data/datasets/.gitkeep
 
+# Vehicle Lights Dataset (large, not tracked)
+data/vehicle_lights/train/*
+!data/vehicle_lights/train/.gitkeep
+data/vehicle_lights/val/*
+!data/vehicle_lights/val/.gitkeep
+data/vehicle_lights/test/*
+!data/vehicle_lights/test/.gitkeep
+data/vehicle_lights/annotations/*.json
+!data/vehicle_lights/annotations/.gitkeep
+
 # Model weights - too large for Git
 models/*.pth
 models/*.pt
 models/*.onnx
 !models/.gitkeep
+
+# Training outputs
+work_dirs/
+visualizations/
 
 # Logs
 logs/*.log
@@ -43,3 +57,4 @@ venv/
 
 # Docker
 .npm-global/
+
